@@ -6,6 +6,7 @@ namespace WordPress\AnthropicAiProvider\Models;
 
 use WordPress\AiClient\Common\Exception\InvalidArgumentException;
 use WordPress\AiClient\Common\Exception\RuntimeException;
+use WordPress\AiClient\Common\Exception\TokenLimitReachedException;
 use WordPress\AiClient\Messages\DTO\Message;
 use WordPress\AiClient\Messages\DTO\MessagePart;
 use WordPress\AiClient\Messages\Enums\MessagePartChannelEnum;
@@ -50,6 +51,17 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  */
 class AnthropicTextGenerationModel extends AbstractApiBasedModel implements TextGenerationModelInterface
 {
+    /**
+     * Default maximum number of tokens for text generation.
+     *
+     * The Anthropic API requires `max_tokens` to always be present in the request,
+     * so this value is used as a fallback when no limit is configured.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    public const DEFAULT_MAX_TOKENS = 4096;
     /**
      * {@inheritDoc}
      *
@@ -132,7 +144,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             $params['max_tokens'] = $maxTokens;
         } else {
             // The 'max_tokens' parameter is required in the Anthropic API, so we need a default.
-            $params['max_tokens'] = 4096;
+            $params['max_tokens'] = self::DEFAULT_MAX_TOKENS;
         }
 
         $temperature = $config->getTemperature();
@@ -203,11 +215,11 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         return array_map(
             function (Message $message): array {
                 return [
-                    'role' => $this->getMessageRoleString($message->getRole()),
-                    'content' => array_values(array_filter(array_map(
-                        [$this, 'getMessagePartData'],
-                        $message->getParts()
-                    ))),
+                'role' => $this->getMessageRoleString($message->getRole()),
+                'content' => array_values(array_filter(array_map(
+                    [$this, 'getMessagePartData'],
+                    $message->getParts()
+                ))),
                 ];
             },
             $messages
@@ -348,7 +360,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             return [
                 'type' => 'tool_result',
                 'tool_use_id' => $functionResponse->getId(),
-                'content'     => json_encode($functionResponse->getResponse()),
+                'content' => json_encode($functionResponse->getResponse()),
             ];
         }
         throw new InvalidArgumentException(
@@ -465,8 +477,15 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 break;
             case 'max_tokens':
             case 'model_context_window_exceeded':
-                $finishReason = FinishReasonEnum::length();
-                break;
+                $maxTokens = $this->getConfig()->getMaxTokens() ?? self::DEFAULT_MAX_TOKENS;
+                throw new TokenLimitReachedException(
+                    sprintf(
+                        'Generation stopped due to token limit (%d) with stop reason "%s".',
+                        $maxTokens,
+                        $responseData['stop_reason']
+                    ),
+                    $maxTokens
+                );
             case 'refusal':
                 $finishReason = FinishReasonEnum::contentFilter();
                 break;
