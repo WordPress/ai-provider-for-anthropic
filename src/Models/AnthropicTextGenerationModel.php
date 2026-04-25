@@ -177,10 +177,11 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         $customOptions = $config->getCustomOptions();
         foreach ($customOptions as $key => $value) {
             if (isset($params[$key])) {
+                $safeKey = esc_html(sanitize_key((string) $key));
                 throw new InvalidArgumentException(
                     sprintf(
                         'The custom option "%s" conflicts with an existing parameter.',
-                        $key
+                        $safeKey
                     )
                 );
             }
@@ -313,7 +314,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             throw new InvalidArgumentException(
                 sprintf(
                     'Unsupported MIME type "%s" for inline file message part.',
-                    $file->getMimeType()
+                    esc_html((string) $file->getMimeType())
                 )
             );
         }
@@ -351,12 +352,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 'content'     => json_encode($functionResponse->getResponse()),
             ];
         }
-        throw new InvalidArgumentException(
-            sprintf(
-                'Unsupported message part type "%s".',
-                $type
-            )
-        );
+        throw new InvalidArgumentException('Unsupported message part type.');
     }
 
     /**
@@ -419,12 +415,13 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
     {
         /** @var ResponseData $responseData */
         $responseData = $response->getData();
+        $providerName = esc_html((string) $this->providerMetadata()->getName());
         if (!isset($responseData['content']) || !$responseData['content']) {
-            throw ResponseException::fromMissingData($this->providerMetadata()->getName(), 'content');
+            throw ResponseException::fromMissingData($providerName, 'content');
         }
         if (!is_array($responseData['content']) || !array_is_list($responseData['content'])) {
             throw ResponseException::fromInvalidData(
-                $this->providerMetadata()->getName(),
+                $providerName,
                 'content',
                 'The value must be an indexed array.'
             );
@@ -442,17 +439,18 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                     $parts[] = $newPart;
                 }
             } catch (InvalidArgumentException $e) {
+                $contentPartPath = esc_html(sprintf('content[%d]', (int) $partIndex));
                 throw ResponseException::fromInvalidData(
-                    $this->providerMetadata()->getName(),
-                    "content[{$partIndex}]",
-                    $e->getMessage()
+                    $providerName,
+                    $contentPartPath,
+                    esc_html($e->getMessage())
                 );
             }
         }
 
         if (!isset($responseData['stop_reason'])) {
             throw ResponseException::fromMissingData(
-                $this->providerMetadata()->getName(),
+                $providerName,
                 'stop_reason'
             );
         }
@@ -474,10 +472,11 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 $finishReason = FinishReasonEnum::toolCalls();
                 break;
             default:
+                $safeStopReason = esc_html((string) $responseData['stop_reason']);
                 throw ResponseException::fromInvalidData(
-                    $this->providerMetadata()->getName(),
+                    $providerName,
                     'stop_reason',
-                    sprintf('Invalid stop reason "%s".', $responseData['stop_reason'])
+                    sprintf('Invalid stop reason "%s".', $safeStopReason)
                 );
         }
 
