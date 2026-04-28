@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WordPress\AnthropicAiProvider\Models;
 
+use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Common\Exception\InvalidArgumentException;
 use WordPress\AiClient\Common\Exception\RuntimeException;
 use WordPress\AiClient\Messages\DTO\Message;
@@ -244,10 +245,17 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         $type = $part->getType();
         if ($type->isText()) {
             if ($part->getChannel()->isThought()) {
-                return [
+                $data = [
                     'type' => 'thinking',
                     'thinking' => $part->getText(),
                 ];
+                if (version_compare(AiClient::VERSION, '1.3.0', '>=')) {
+                    $signature = $part->getThoughtSignature();
+                    if (null !== $signature) {
+                        $data['signature'] = $signature;
+                    }
+                }
+                return $data;
             }
             return [
                 'type' => 'text',
@@ -494,6 +502,8 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 ($usage['cache_creation_input_tokens'] ?? 0) +
                 ($usage['cache_read_input_tokens'] ?? 0);
 
+            // Anthropic bundles thinking tokens into output_tokens and does not expose a separate count,
+            // so TokenUsage::thoughtTokens is left unset.
             $tokenUsage = new TokenUsage(
                 $inputTokens,
                 $usage['output_tokens'] ?? 0,
@@ -546,6 +556,16 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             case 'thinking':
                 if (!isset($partData['thinking']) || !is_string($partData['thinking'])) {
                     throw new InvalidArgumentException('Part has an invalid thinking shape.');
+                }
+                $signature = isset($partData['signature']) && is_string($partData['signature'])
+                    ? $partData['signature']
+                    : null;
+                if (null !== $signature && version_compare(AiClient::VERSION, '1.3.0', '>=')) {
+                    return new MessagePart(
+                        $partData['thinking'],
+                        MessagePartChannelEnum::thought(),
+                        $signature
+                    );
                 }
                 return new MessagePart($partData['thinking'], MessagePartChannelEnum::thought());
             case 'tool_use':
