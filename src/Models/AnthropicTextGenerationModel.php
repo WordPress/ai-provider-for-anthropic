@@ -249,7 +249,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                     'type' => 'thinking',
                     'thinking' => $part->getText(),
                 ];
-                if (version_compare(AiClient::VERSION, '1.3.0', '>=')) {
+                if (version_compare(AiClient::VERSION, '1.3.0', '>=') && method_exists($part, 'getThoughtSignature')) {
                     $signature = $part->getThoughtSignature();
                     if (null !== $signature) {
                         $data['signature'] = $signature;
@@ -560,14 +560,11 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 $signature = isset($partData['signature']) && is_string($partData['signature'])
                     ? $partData['signature']
                     : null;
+                $messagePartArgs = [$partData['thinking'], MessagePartChannelEnum::thought()];
                 if (null !== $signature && version_compare(AiClient::VERSION, '1.3.0', '>=')) {
-                    return new MessagePart(
-                        $partData['thinking'],
-                        MessagePartChannelEnum::thought(),
-                        $signature
-                    );
+                    $messagePartArgs[] = $signature;
                 }
-                return new MessagePart($partData['thinking'], MessagePartChannelEnum::thought());
+                return new MessagePart(...$messagePartArgs);
             case 'tool_use':
                 if (
                     !isset($partData['id']) ||
