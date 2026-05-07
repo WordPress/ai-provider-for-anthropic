@@ -249,7 +249,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                     'type' => 'thinking',
                     'thinking' => $part->getText(),
                 ];
-                if (version_compare(AiClient::VERSION, '1.3.0', '>=') && method_exists($part, 'getThoughtSignature')) {
+                if (method_exists($part, 'getThoughtSignature')) {
                     $signature = $part->getThoughtSignature();
                     if (null !== $signature) {
                         $data['signature'] = $signature;
