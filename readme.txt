@@ -48,6 +48,10 @@ No, this plugin requires the PHP AI Client plugin to be installed and activated.
 
 == Changelog ==
 
+= 1.0.3 =
+
+* Add a provider logo to the metadata if the client version > 1.3.0 ([#18](https://github.com/WordPress/ai-provider-for-anthropic/pull/18)).
+
 = 1.0.2 =
 
 * Add plugin directory assets by @shaunandrews in https://github.com/WordPress/ai-provider-for-anthropic/pull/10
