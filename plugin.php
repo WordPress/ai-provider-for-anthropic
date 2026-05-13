@@ -6,7 +6,7 @@
  * Description: AI Provider for Anthropic for the WordPress AI Client.
  * Requires at least: 6.9
  * Requires PHP: 7.4
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: WordPress AI Team
  * Author URI: https://make.wordpress.org/ai/
  * License: GPL-2.0-or-later
