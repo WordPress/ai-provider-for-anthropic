@@ -325,9 +325,10 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                     'The function_call typed message part must contain a function call.'
                 );
             }
-            // Ensure null becomes empty object for Anthropic's API which expects an object.
+            // Ensure null or empty array becomes empty object for Anthropic's API which expects an object.
+            // PHP json_encode([]) produces "[]" (array), but Anthropic requires "{}" (object) for tool_use.input.
             $input = $functionCall->getArgs();
-            if ($input === null) {
+            if ($input === null || (is_array($input) && count($input) === 0)) {
                 $input = new \stdClass();
             }
             return [
