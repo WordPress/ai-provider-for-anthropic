@@ -81,10 +81,21 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
 
         $headers = ['Content-Type' => 'application/json'];
 
-        // Add beta header for structured outputs if JSON schema output is requested.
         $config = $this->getConfig();
+
+        // Add beta header for structured outputs if JSON schema output is requested.
         if ('application/json' === $config->getOutputMimeType() && $config->getOutputSchema()) {
             $headers['anthropic-beta'] = 'structured-outputs-2025-11-13';
+        }
+
+        // Add beta headers required for Skills (container parameter) if present in custom options.
+        $customOptions = $config->getCustomOptions();
+        if (!empty($customOptions['container']['skills'])) {
+            $skillsBetaHeaders = ['code-execution-2025-08-25', 'skills-2025-10-02'];
+            if (isset($headers['anthropic-beta'])) {
+                array_unshift($skillsBetaHeaders, $headers['anthropic-beta']);
+            }
+            $headers['anthropic-beta'] = implode(',', $skillsBetaHeaders);
         }
 
         $request = new Request(
