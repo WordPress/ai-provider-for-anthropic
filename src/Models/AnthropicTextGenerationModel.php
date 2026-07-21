@@ -244,10 +244,24 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         $type = $part->getType();
         if ($type->isText()) {
             if ($part->getChannel()->isThought()) {
-                return [
+                $thinkingData = [
                     'type' => 'thinking',
                     'thinking' => $part->getText(),
                 ];
+                /*
+                 * The Anthropic API requires the signature field when a
+                 * thinking block is sent back as part of the conversation
+                 * (e.g. multi-turn function calling), otherwise it rejects
+                 * the request with "thinking.signature: Field required".
+                 * Thought signature support was added in php-ai-client 1.3.0.
+                 */
+                if (method_exists($part, 'getThoughtSignature')) {
+                    $signature = $part->getThoughtSignature();
+                    if ($signature !== null) {
+                        $thinkingData['signature'] = $signature;
+                    }
+                }
+                return $thinkingData;
             }
             return [
                 'type' => 'text',
@@ -546,6 +560,26 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             case 'thinking':
                 if (!isset($partData['thinking']) || !is_string($partData['thinking'])) {
                     throw new InvalidArgumentException('Part has an invalid thinking shape.');
+                }
+                /*
+                 * Preserve the signature so the thinking block can be sent
+                 * back to the API in multi-turn conversations, which the
+                 * Anthropic API requires. Thought signature support was
+                 * added in php-ai-client 1.3.0.
+                 */
+                if (
+                    method_exists(MessagePart::class, 'getThoughtSignature')
+                    && isset($partData['signature'])
+                    && is_string($partData['signature'])
+                ) {
+                    // The third constructor argument exists in
+                    // php-ai-client >= 1.3, guarded by method_exists() above.
+                    // @phpstan-ignore-next-line
+                    return new MessagePart(
+                        $partData['thinking'],
+                        MessagePartChannelEnum::thought(),
+                        $partData['signature']
+                    );
                 }
                 return new MessagePart($partData['thinking'], MessagePartChannelEnum::thought());
             case 'tool_use':
