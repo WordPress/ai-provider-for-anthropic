@@ -1,12 +1,12 @@
 === AI Provider for Anthropic ===
-Contributors: wordpressdotorg
-Tags: ai, anthropic, claude, artificial-intelligence, connector
+Contributors:      wordpressdotorg
+Tags:              ai, anthropic, claude, artificial-intelligence, connector
 Requires at least: 6.9
-Tested up to: 7.0
-Stable tag: 1.0.3
-Requires PHP: 7.4
-License: GPL-2.0-or-later
-License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Tested up to:      7.1
+Stable tag:        1.0.3
+Requires PHP:      7.4
+License:           GPL-2.0-or-later
+License URI:       https://www.gnu.org/licenses/gpl-2.0.html
 
 Anthropic (Claude) provider for the PHP AI Client SDK.
 
