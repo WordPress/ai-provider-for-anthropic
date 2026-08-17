@@ -160,7 +160,7 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
      *
      * @link https://platform.claude.com/docs/en/about-claude/models/migration-guide
      *
-     * @since n.e.x.t
+     * @since 1.0.4
      *
      * @param string $modelId The model identifier, e.g. 'claude-opus-4-7'.
      * @return bool True if the model rejects sampling parameters, false otherwise.
