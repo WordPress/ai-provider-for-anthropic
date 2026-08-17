@@ -48,6 +48,17 @@ No, this plugin requires the PHP AI Client plugin to be installed and activated.
 
 == Changelog ==
 
+= 1.0.4 - 2026-08-17 =
+
+**Changed**
+
+* Bumped WordPress tested-up-to version 7.1 [#35](https://github.com/WordPress/ai-provider-for-anthropic/pull/35).
+
+**Fixed**
+
+* Corrected model metadata for Claude Opus 4.7 and later, including Claude 5 models, so unsupported sampling parameters are no longer advertised during automatic model selection [#25](https://github.com/WordPress/ai-provider-for-anthropic/pull/25).
+* Normalized empty tool-call arguments as JSON objects, preventing Anthropic API errors when replaying tool calls that accept no arguments [#23](https://github.com/WordPress/ai-provider-for-anthropic/pull/23).
+
 = 1.0.3 =
 
 * Add a provider logo to the metadata if the client version > 1.3.0 ([#18](https://github.com/WordPress/ai-provider-for-anthropic/pull/18)).
