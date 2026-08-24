@@ -84,9 +84,6 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
         $anthropicOptions = [
             new SupportedOption(OptionEnum::systemInstruction()),
             new SupportedOption(OptionEnum::maxTokens()),
-            new SupportedOption(OptionEnum::temperature()),
-            new SupportedOption(OptionEnum::topP()),
-            new SupportedOption(OptionEnum::topK()),
             new SupportedOption(OptionEnum::stopSequences()),
             new SupportedOption(OptionEnum::outputMimeType(), ['text/plain', 'application/json']),
             new SupportedOption(OptionEnum::outputSchema()),
@@ -103,9 +100,11 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
             ),
             new SupportedOption(OptionEnum::outputModalities(), [[ModalityEnum::text()]]),
         ];
-        $anthropicWebSearchOptions = array_merge($anthropicOptions, [
-            new SupportedOption(OptionEnum::webSearch()),
-        ]);
+        $anthropicSamplingOptions = [
+            new SupportedOption(OptionEnum::temperature()),
+            new SupportedOption(OptionEnum::topP()),
+            new SupportedOption(OptionEnum::topK()),
+        ];
 
         $modelsData = (array) $responseData['data'];
 
@@ -114,15 +113,19 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
                 static function (array $modelData) use (
                     $anthropicCapabilities,
                     $anthropicOptions,
-                    $anthropicWebSearchOptions
+                    $anthropicSamplingOptions
                 ): ModelMetadata {
                     $modelId = $modelData['id'];
                     $modelCaps = $anthropicCapabilities;
+                    $modelOptions = $anthropicOptions;
+
+                    if (!self::modelRejectsSamplingParameters($modelId)) {
+                        $modelOptions = array_merge($modelOptions, $anthropicSamplingOptions);
+                    }
+
                     if (!preg_match('/^claude-3-[a-z]+/', $modelId)) {
                         // Only models newer than Claude 3 support web search.
-                        $modelOptions = $anthropicWebSearchOptions;
-                    } else {
-                        $modelOptions = $anthropicOptions;
+                        $modelOptions[] = new SupportedOption(OptionEnum::webSearch());
                     }
 
                     $modelName = $modelData['display_name'] ?? $modelId;
@@ -141,6 +144,49 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
         usort($models, [$this, 'modelSortCallback']);
 
         return $models;
+    }
+
+    /**
+     * Determines whether the given model rejects sampling parameters.
+     *
+     * Beginning with Claude Opus 4.7, the Anthropic API returns a 400 error when 'temperature', 'top_p', or 'top_k'
+     * are set to any non-default value. The same applies to the Claude 5 generation models (e.g. Claude Fable 5).
+     * Earlier Opus versions and the Sonnet and Haiku families (as of Sonnet 4.6 / Haiku 4.5) still accept sampling
+     * parameters.
+     *
+     * Unknown future models at major version 5 or higher are assumed to reject sampling parameters as well. If that
+     * assumption turns out wrong for a model, the model is merely not selected for prompts that require sampling
+     * parameters, whereas advertising support the model does not have would lead to hard API errors.
+     *
+     * @link https://platform.claude.com/docs/en/about-claude/models/migration-guide
+     *
+     * @since 1.0.4
+     *
+     * @param string $modelId The model identifier, e.g. 'claude-opus-4-7'.
+     * @return bool True if the model rejects sampling parameters, false otherwise.
+     */
+    protected static function modelRejectsSamplingParameters(string $modelId): bool
+    {
+        /*
+         * Parse the Claude model family and major/minor version, e.g. 'claude-opus-4-7'.
+         * The minor version is limited to two digits so that a date suffix in model IDs
+         * without a minor version (e.g. 'claude-opus-4-20250514') is not mistaken for one.
+         */
+        if (!preg_match('/^claude-([a-z]+)-(\d+)(?:-(\d{1,2})(?!\d))?/', $modelId, $matches)) {
+            return false;
+        }
+
+        $family = $matches[1];
+        $major = (int) $matches[2];
+        $minor = isset($matches[3]) ? (int) $matches[3] : 0;
+
+        // All model families reject sampling parameters from major version 5 onwards.
+        if ($major >= 5) {
+            return true;
+        }
+
+        // Claude Opus 4.7 was the first model to reject sampling parameters.
+        return $family === 'opus' && $major === 4 && $minor >= 7;
     }
 
     /**
