@@ -8,4 +8,5 @@
 /composer.lock
 /phpcs.xml.dist
 /phpstan.neon.dist
+/README.md
 /vendor
