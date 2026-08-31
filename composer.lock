@@ -1140,7 +1140,8 @@
     "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
-        "phpcompatibility/php-compatibility": 20
+        "phpcompatibility/php-compatibility": 20,
+        "wordpress/php-ai-client": 20
     },
     "prefer-stable": true,
     "prefer-lowest": false,
