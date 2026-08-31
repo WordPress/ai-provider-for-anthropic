@@ -51,9 +51,7 @@ class AnthropicProvider extends AbstractApiProvider
             }
         }
 
-        throw new RuntimeException(
-            'Unsupported model capabilities: ' . implode(', ', $capabilities)
-        );
+        throw new RuntimeException('Unsupported model capabilities.');
     }
 
     /**
