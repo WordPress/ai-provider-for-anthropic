@@ -46,12 +46,15 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  *     id?: string,
  *     role?: string,
  *     content?: list<array<string, mixed>>,
+ *     container?: array{id?: string},
  *     stop_reason?: string,
  *     usage?: UsageData
  * }
  */
 class AnthropicTextGenerationModel extends AbstractApiBasedModel implements TextGenerationModelInterface
 {
+    public const MAX_TOOL_CONTINUATIONS = 5;
+
     /**
      * Default maximum number of tokens for text generation.
      *
@@ -100,21 +103,143 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             $headers['anthropic-beta'] = 'structured-outputs-2025-11-13';
         }
 
-        $request = new Request(
-            HttpMethodEnum::POST(),
-            AnthropicProvider::url('messages'),
-            $headers,
-            $params,
-            $this->getRequestOptions()
-        );
+        /*
+         * When a server-side tool (such as web search) makes a turn run long, the API returns
+         * it with `stop_reason: "pause_turn"` and expects the same conversation to be sent
+         * again, with the paused assistant turn appended and the identical tools, so that
+         * the model can continue where it left off. Without that, the caller is handed a
+         * turn that looks finished but only contains the first fragment of the answer.
+         *
+         * The content and token usage of every leg are accumulated so the caller receives one
+         * complete result. The number of continuations is bounded to avoid an endless loop.
+         */
+        $accumulatedContent = [];
+        $accumulatedUsage = [
+            'input_tokens' => 0,
+            'output_tokens' => 0,
+            'cache_creation_input_tokens' => 0,
+            'cache_read_input_tokens' => 0,
+        ];
+        $lastResponseData = null;
 
-        // Add authentication credentials to the request.
-        $request = $this->getRequestAuthentication()->authenticateRequest($request);
+        /** @var list<array<string, mixed>> $messagesParam */
+        $messagesParam = isset($params['messages']) && is_array($params['messages'])
+            ? $params['messages']
+            : [];
 
-        // Send and process the request.
-        $response = $httpTransporter->send($request);
-        ResponseUtil::throwIfNotSuccessful($response);
-        return $this->parseResponseToGenerativeAiResult($response);
+        for ($i = 0; $i <= self::MAX_TOOL_CONTINUATIONS; $i++) {
+            $params['messages'] = $messagesParam;
+
+            $request = new Request(
+                HttpMethodEnum::POST(),
+                AnthropicProvider::url('messages'),
+                $headers,
+                $params,
+                $this->getRequestOptions()
+            );
+
+            // Add authentication credentials to the request.
+            $request = $this->getRequestAuthentication()->authenticateRequest($request);
+
+            // Send and process the request.
+            $response = $httpTransporter->send($request);
+            ResponseUtil::throwIfNotSuccessful($response);
+
+            /** @var ResponseData $responseData */
+            $responseData = $response->getData();
+            $lastResponseData = $responseData;
+
+            if (isset($responseData['content']) && is_array($responseData['content'])) {
+                foreach ($responseData['content'] as $contentPart) {
+                    $accumulatedContent[] = $contentPart;
+                }
+            }
+
+            if (isset($responseData['usage']) && is_array($responseData['usage'])) {
+                $usage = $responseData['usage'];
+                $accumulatedUsage['input_tokens'] += ($usage['input_tokens'] ?? 0);
+                $accumulatedUsage['output_tokens'] += ($usage['output_tokens'] ?? 0);
+                $accumulatedUsage['cache_creation_input_tokens'] += ($usage['cache_creation_input_tokens'] ?? 0);
+                $accumulatedUsage['cache_read_input_tokens'] += ($usage['cache_read_input_tokens'] ?? 0);
+            }
+
+            $stopReason = $responseData['stop_reason'] ?? null;
+            if ('pause_turn' !== $stopReason || $i >= self::MAX_TOOL_CONTINUATIONS) {
+                break;
+            }
+
+// Preserve state for server tools backed by a container, such as code execution.
+$container = $responseData['container'] ?? null;
+if (
+    is_array($container) &&
+    isset($container['id']) &&
+    is_string($container['id'])
+) {
+    $params['container'] = $container['id'];
+}
+            // Append assistant response to messages parameter for continuation.
+            $role = isset($responseData['role']) && is_string($responseData['role'])
+                ? $responseData['role']
+                : 'assistant';
+            $content = isset($responseData['content']) && is_array($responseData['content'])
+                ? $responseData['content']
+                : [];
+            $messagesParam[] = [
+                'role' => $role,
+                'content' => $content,
+            ];
+        }
+
+        if (!$lastResponseData) {
+            throw new RuntimeException('No response received from API.');
+        }
+
+        $lastResponseData['content'] = $this->mergeTextBlocks($accumulatedContent);
+        $lastResponseData['usage'] = $accumulatedUsage;
+
+        return $this->parseResponseDataToGenerativeAiResult($lastResponseData);
+    }
+
+    /**
+     * Merges the text slices of an assistant turn into a single text block.
+     *
+     * A turn that uses a server-side tool (such as web search) carries its answer as several
+     * text blocks: the model emits a slice of text, then a `server_tool_use` /
+     * `web_search_tool_result` pair, then the next slice, and so on — within a single response
+     * as well as across the legs of a turn that paused with `pause_turn`. Consumers read the
+     * answer from the first content text part of the message — GenerativeAiResult::toText()
+     * returns that part and stops — so leaving the slices apart would surface only the first
+     * fragment and silently discard the rest of an answer that was fully generated and paid
+     * for. The slices belong to a single assistant turn, so they are joined into the first
+     * text block; non-text blocks and turns with a single text block pass through unchanged.
+     *
+     * @since n.e.x.t
+     *
+     * @param list<array<string, mixed>> $content The accumulated content blocks.
+     * @return list<array<string, mixed>> The content blocks with the text slices joined.
+     */
+    protected function mergeTextBlocks(array $content): array
+    {
+        $merged = [];
+        $textIndex = null;
+
+        foreach ($content as $block) {
+            $text = $block['text'] ?? null;
+
+            if (($block['type'] ?? null) === 'text' && is_string($text)) {
+                if ($textIndex !== null) {
+                    $previous = $merged[$textIndex]['text'];
+                    $merged[$textIndex]['text'] = (is_string($previous) ? $previous : '') . $text;
+                    continue;
+                }
+
+                $textIndex = count($merged);
+            }
+
+            $merged[] = $block;
+        }
+
+        return $merged;
     }
 
     /**
@@ -485,6 +610,19 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
     {
         /** @var ResponseData $responseData */
         $responseData = $response->getData();
+        return $this->parseResponseDataToGenerativeAiResult($responseData);
+    }
+
+    /**
+     * Parses the response data from the API endpoint to a generative AI result.
+     *
+     * @since n.e.x.t
+     *
+     * @param ResponseData $responseData The response data from the API endpoint.
+     * @return GenerativeAiResult The parsed generative AI result.
+     */
+    protected function parseResponseDataToGenerativeAiResult(array $responseData): GenerativeAiResult
+    {
         if (!isset($responseData['content']) || !$responseData['content']) {
             throw ResponseException::fromMissingData($this->providerMetadata()->getName(), 'content');
         }
@@ -524,6 +662,12 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         }
 
         switch ($responseData['stop_reason']) {
+            /*
+             * A paused turn is normally continued in generateTextResult() before the response
+             * reaches this point, so `pause_turn` only survives when the continuation limit was
+             * exhausted. The turn is treated as finished in that case; the raw stop reason is
+             * kept in the result metadata below so callers can still tell the two apart.
+             */
             case 'pause_turn':
             case 'end_turn':
             case 'stop_sequence':
@@ -576,13 +720,17 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             $tokenUsage = new TokenUsage(0, 0, 0);
         }
 
-        // Use any other data from the response as provider-specific response metadata.
+        /*
+         * Use any other data from the response as provider-specific response metadata. The raw
+         * `stop_reason` is kept: several Anthropic stop reasons map onto the same
+         * FinishReasonEnum value, so dropping it would leave callers unable to distinguish, for
+         * example, a turn that ended normally from one that is still paused.
+         */
         $additionalData = $responseData;
         unset(
             $additionalData['id'],
             $additionalData['role'],
             $additionalData['content'],
-            $additionalData['stop_reason'],
             $additionalData['usage']
         );
 
