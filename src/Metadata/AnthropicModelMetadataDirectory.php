@@ -250,10 +250,10 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
             }
 
             // Prefer models without a suffix (i.e. base models) over those with a suffix.
-            if (!isset($aMatches[4]) && isset($bMatches[4])) {
+            if (($aMatches[4] ?? '') === '' && ($bMatches[4] ?? '') !== '') {
                 return -1;
             }
-            if (!isset($bMatches[4]) && isset($aMatches[4])) {
+            if (($bMatches[4] ?? '') === '' && ($aMatches[4] ?? '') !== '') {
                 return 1;
             }
 
@@ -266,7 +266,7 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
             }
 
             // Prefer later release dates.
-            if (isset($aMatches[4]) && isset($bMatches[4])) {
+            if (($aMatches[4] ?? '') !== '' && ($bMatches[4] ?? '') !== '') {
                 $aDate = (int) substr($aMatches[4], 1);
                 $bDate = (int) substr($bMatches[4], 1);
                 if ($aDate > $bDate) {
