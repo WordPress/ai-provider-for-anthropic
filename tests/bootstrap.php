@@ -3,7 +3,7 @@
 /**
  * PHPUnit bootstrap file for the AI Provider for Anthropic package.
  *
- * @since n.e.x.t
+ * @since 1.0.5
  *
  * @package WordPress\AnthropicAiProvider
  */
