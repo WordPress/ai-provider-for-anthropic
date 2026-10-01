@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace WordPress\AnthropicAiProvider\Models;
 
-use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Common\Exception\InvalidArgumentException;
 use WordPress\AiClient\Common\Exception\RuntimeException;
 use WordPress\AiClient\Common\Exception\TokenLimitReachedException;
@@ -36,11 +35,13 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  *
  * @since 1.0.0
  *
+ * @phpstan-type OutputTokenDetailsData array{thinking_tokens?: int}
  * @phpstan-type UsageData array{
  *     input_tokens?: int,
  *     output_tokens?: int,
  *     cache_creation_input_tokens?: int,
- *     cache_read_input_tokens?: int
+ *     cache_read_input_tokens?: int,
+ *     output_tokens_details?: OutputTokenDetailsData
  * }
  * @phpstan-type ResponseData array{
  *     id?: string,
@@ -120,6 +121,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             'cache_creation_input_tokens' => 0,
             'cache_read_input_tokens' => 0,
         ];
+        $accumulatedThinkingTokens = null;
         $lastResponseData = null;
 
         /** @var list<array<string, mixed>> $messagesParam */
@@ -161,6 +163,11 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 $accumulatedUsage['output_tokens'] += ($usage['output_tokens'] ?? 0);
                 $accumulatedUsage['cache_creation_input_tokens'] += ($usage['cache_creation_input_tokens'] ?? 0);
                 $accumulatedUsage['cache_read_input_tokens'] += ($usage['cache_read_input_tokens'] ?? 0);
+                $outputTokenDetails = $usage['output_tokens_details'] ?? null;
+                if (is_array($outputTokenDetails) && isset($outputTokenDetails['thinking_tokens'])) {
+                    $accumulatedThinkingTokens = ($accumulatedThinkingTokens ?? 0)
+                        + $outputTokenDetails['thinking_tokens'];
+                }
             }
 
             $stopReason = $responseData['stop_reason'] ?? null;
@@ -168,15 +175,15 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 break;
             }
 
-// Preserve state for server tools backed by a container, such as code execution.
-$container = $responseData['container'] ?? null;
-if (
-    is_array($container) &&
-    isset($container['id']) &&
-    is_string($container['id'])
-) {
-    $params['container'] = $container['id'];
-}
+            // Preserve state for server tools backed by a container, such as code execution.
+            $container = $responseData['container'] ?? null;
+            if (
+                is_array($container) &&
+                isset($container['id']) &&
+                is_string($container['id'])
+            ) {
+                $params['container'] = $container['id'];
+            }
             // Append assistant response to messages parameter for continuation.
             $role = isset($responseData['role']) && is_string($responseData['role'])
                 ? $responseData['role']
@@ -195,6 +202,11 @@ if (
         }
 
         $lastResponseData['content'] = $this->mergeTextBlocks($accumulatedContent);
+        if ($accumulatedThinkingTokens !== null) {
+            $accumulatedUsage['output_tokens_details'] = [
+                'thinking_tokens' => $accumulatedThinkingTokens,
+            ];
+        }
         $lastResponseData['usage'] = $accumulatedUsage;
 
         return $this->parseResponseDataToGenerativeAiResult($lastResponseData);
@@ -710,11 +722,18 @@ if (
             $inputTokens = ($usage['input_tokens'] ?? 0) +
                 ($usage['cache_creation_input_tokens'] ?? 0) +
                 ($usage['cache_read_input_tokens'] ?? 0);
+            $outputTokens = $usage['output_tokens'] ?? 0;
+            $thoughtTokens = null;
+            $outputTokenDetails = $usage['output_tokens_details'] ?? null;
+            if (is_array($outputTokenDetails) && isset($outputTokenDetails['thinking_tokens'])) {
+                $thoughtTokens = $outputTokenDetails['thinking_tokens'];
+            }
 
             $tokenUsage = new TokenUsage(
                 $inputTokens,
-                $usage['output_tokens'] ?? 0,
-                $inputTokens + ($usage['output_tokens'] ?? 0)
+                $outputTokens,
+                $inputTokens + $outputTokens,
+                $thoughtTokens
             );
         } else {
             $tokenUsage = new TokenUsage(0, 0, 0);
