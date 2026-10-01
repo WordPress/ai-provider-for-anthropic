@@ -48,7 +48,7 @@ No, this plugin requires the PHP AI Client plugin to be installed and activated.
 
 == Changelog ==
 
-= 1.0.5 - 2026-09-30 =
+= 1.0.5 - 2026-10-01 =
 
 **Changed**
 
