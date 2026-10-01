@@ -330,7 +330,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 throw new InvalidArgumentException(
                     sprintf(
                         'The custom option "%s" conflicts with an existing parameter.',
-                        $key
+                        self::escapeForMessage((string) $key)
                     )
                 );
             }
@@ -500,7 +500,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             throw new InvalidArgumentException(
                 sprintf(
                     'Unsupported MIME type "%s" for inline file message part.',
-                    $file->getMimeType()
+                    self::escapeForMessage((string) $file->getMimeType())
                 )
             );
         }
@@ -542,7 +542,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         throw new InvalidArgumentException(
             sprintf(
                 'Unsupported message part type "%s".',
-                $type
+                self::escapeForMessage((string) $type)
             )
         );
     }
@@ -661,7 +661,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 throw ResponseException::fromInvalidData(
                     $this->providerMetadata()->getName(),
                     "content[{$partIndex}]",
-                    $e->getMessage()
+                    self::escapeForMessage($e->getMessage())
                 );
             }
         }
@@ -692,7 +692,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                     sprintf(
                         'Generation stopped due to token limit (%d) with stop reason "%s".',
                         $maxTokens,
-                        $responseData['stop_reason']
+                        self::escapeForMessage((string) $responseData['stop_reason'])
                     ),
                     $maxTokens
                 );
@@ -706,7 +706,10 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 throw ResponseException::fromInvalidData(
                     $this->providerMetadata()->getName(),
                     'stop_reason',
-                    sprintf('Invalid stop reason "%s".', $responseData['stop_reason'])
+                    sprintf(
+                        'Invalid stop reason "%s".',
+                        self::escapeForMessage((string) $responseData['stop_reason'])
+                    )
                 );
         }
 
@@ -839,5 +842,27 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         }
 
         throw new InvalidArgumentException('Part has an unexpected type.');
+    }
+
+    /**
+     * Escapes a dynamic value for use in an exception message.
+     *
+     * Uses the WordPress `esc_html()` function when it is available, so that the package
+     * still works outside of WordPress.
+     *
+     * @since n.e.x.t
+     *
+     * @param string $value The value to escape.
+     * @return string The escaped value, or the original value outside of WordPress.
+     */
+    private static function escapeForMessage(string $value): string
+    {
+        if (function_exists('esc_html')) {
+            $escaped = esc_html($value);
+            if (is_string($escaped)) {
+                return $escaped;
+            }
+        }
+        return $value;
     }
 }
