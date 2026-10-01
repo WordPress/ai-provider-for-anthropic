@@ -51,7 +51,16 @@ class AnthropicProvider extends AbstractApiProvider
             }
         }
 
-        throw new RuntimeException('Unsupported model capabilities.');
+        $capabilitiesList = implode(', ', $capabilities);
+        if (function_exists('esc_html')) {
+            $escaped = esc_html($capabilitiesList);
+            if (is_string($escaped)) {
+                $capabilitiesList = $escaped;
+            }
+        }
+        throw new RuntimeException(
+            'Unsupported model capabilities: ' . $capabilitiesList
+        );
     }
 
     /**
@@ -76,6 +85,10 @@ class AnthropicProvider extends AbstractApiProvider
             } else {
                 $providerMetadataArgs[] = 'Text generation with Claude.';
             }
+        }
+        // Provider logoPath support was added in 1.3.0.
+        if (version_compare(AiClient::VERSION, '1.3.0', '>=')) {
+            $providerMetadataArgs[] = dirname(__DIR__, 2) . '/assets/images/anthropic.svg';
         }
         return new ProviderMetadata(...$providerMetadataArgs);
     }

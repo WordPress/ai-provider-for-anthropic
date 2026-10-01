@@ -10,3 +10,5 @@ plugin.php export-ignore
 /.wordpress-org export-ignore
 /phpcs.xml.dist export-ignore
 /phpstan.neon.dist export-ignore
+
+/README.md export-ignore

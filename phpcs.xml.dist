@@ -4,6 +4,7 @@
 
     <!-- Scan these files -->
     <file>src</file>
+    <file>tests</file>
     <file>plugin.php</file>
 
     <!-- Ignore vendor directory -->
