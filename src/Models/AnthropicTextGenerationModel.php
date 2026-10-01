@@ -40,7 +40,8 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  *     input_tokens?: int,
  *     output_tokens?: int,
  *     cache_creation_input_tokens?: int,
- *     cache_read_input_tokens?: int
+ *     cache_read_input_tokens?: int,
+ *     server_tool_use?: array<string, int>
  * }
  * @phpstan-type ResponseData array{
  *     id?: string,
@@ -120,6 +121,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             'cache_creation_input_tokens' => 0,
             'cache_read_input_tokens' => 0,
         ];
+        $accumulatedServerToolUse = null;
         $lastResponseData = null;
 
         /** @var list<array<string, mixed>> $messagesParam */
@@ -161,6 +163,17 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 $accumulatedUsage['output_tokens'] += ($usage['output_tokens'] ?? 0);
                 $accumulatedUsage['cache_creation_input_tokens'] += ($usage['cache_creation_input_tokens'] ?? 0);
                 $accumulatedUsage['cache_read_input_tokens'] += ($usage['cache_read_input_tokens'] ?? 0);
+
+                // Server tool request counts (such as `web_search_requests`) are billed per leg.
+                $serverToolUse = $usage['server_tool_use'] ?? null;
+                if (is_array($serverToolUse)) {
+                    $accumulatedServerToolUse = $accumulatedServerToolUse ?? [];
+                    foreach ($serverToolUse as $key => $count) {
+                        if (is_int($count)) {
+                            $accumulatedServerToolUse[$key] = ($accumulatedServerToolUse[$key] ?? 0) + $count;
+                        }
+                    }
+                }
             }
 
             $stopReason = $responseData['stop_reason'] ?? null;
@@ -196,6 +209,9 @@ if (
 
         $lastResponseData['content'] = $this->mergeTextBlocks($accumulatedContent);
         $lastResponseData['usage'] = $accumulatedUsage;
+        if ($accumulatedServerToolUse !== null) {
+            $lastResponseData['usage']['server_tool_use'] = $accumulatedServerToolUse;
+        }
 
         return $this->parseResponseDataToGenerativeAiResult($lastResponseData);
     }
@@ -725,6 +741,10 @@ if (
          * `stop_reason` is kept: several Anthropic stop reasons map onto the same
          * FinishReasonEnum value, so dropping it would leave callers unable to distinguish, for
          * example, a turn that ended normally from one that is still paused.
+         *
+         * Server tool usage is not token data, so it is kept here rather than dropped with the
+         * rest of `usage`: Anthropic bills web search per request, and callers have no other
+         * way to know whether a search ran.
          */
         $additionalData = $responseData;
         unset(
@@ -733,6 +753,10 @@ if (
             $additionalData['content'],
             $additionalData['usage']
         );
+        $serverToolUse = $responseData['usage']['server_tool_use'] ?? null;
+        if (is_array($serverToolUse)) {
+            $additionalData['server_tool_use'] = $serverToolUse;
+        }
 
         return new GenerativeAiResult(
             $id,
