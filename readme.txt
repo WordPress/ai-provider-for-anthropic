@@ -52,14 +52,15 @@ No, this plugin requires the PHP AI Client plugin to be installed and activated.
 
 **Changed**
 
-* Throw `TokenLimitReachedException` when the Anthropic API stops with `max_tokens` or `model_context_window_exceeded`, instead of silently returning a truncated result [#4](https://github.com/WordPress/ai-provider-for-anthropic/pull/4).
-* Added a WordPress Playground preview blueprint [#40](https://github.com/WordPress/ai-provider-for-anthropic/pull/40).
+* Throw `TokenLimitReachedException` when the Anthropic API stops with `max_tokens` or `model_context_window_exceeded`, instead of silently returning a truncated result ([#4](https://github.com/WordPress/ai-provider-for-anthropic/pull/4)).
+* Added a WordPress Playground preview blueprint ([#40](https://github.com/WordPress/ai-provider-for-anthropic/pull/40)).
 
 **Fixed**
 
-* Preserved extended thinking signatures across conversation turns, preventing "thinking.signature: Field required" errors on multi-turn conversations [#31](https://github.com/WordPress/ai-provider-for-anthropic/pull/31).
-* Continued turns that stop with `pause_turn` instead of returning a truncated result [#32](https://github.com/WordPress/ai-provider-for-anthropic/pull/32).
-* Made model sorting robust to empty regex matches and tested compatibility with PHP AI Client 1.3.1 [#34](https://github.com/WordPress/ai-provider-for-anthropic/pull/34).
+* Preserved extended thinking signatures across conversation turns, preventing "thinking.signature: Field required" errors on multi-turn conversations ([#31](https://github.com/WordPress/ai-provider-for-anthropic/pull/31)).
+* Continued turns that stop with `pause_turn` instead of returning a truncated result ([#32](https://github.com/WordPress/ai-provider-for-anthropic/pull/32)).
+* Made model sorting robust to empty regex matches and tested compatibility with PHP AI Client 1.3.1 ([#34](https://github.com/WordPress/ai-provider-for-anthropic/pull/34)).
+* Anthropic thinking-token usage is now reported via thoughtTokens, with totals preserved and paused-turn continuations accumulated correctly ([#44](https://github.com/WordPress/ai-provider-for-anthropic/pull/44)).
 
 = 1.0.4 - 2026-08-17 =
 
