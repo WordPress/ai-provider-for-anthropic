@@ -41,7 +41,8 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  *     output_tokens?: int,
  *     cache_creation_input_tokens?: int,
  *     cache_read_input_tokens?: int,
- *     output_tokens_details?: OutputTokenDetailsData
+ *     output_tokens_details?: OutputTokenDetailsData,
+ *     server_tool_use?: array<string, int>
  * }
  * @phpstan-type ResponseData array{
  *     id?: string,
@@ -122,6 +123,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             'cache_read_input_tokens' => 0,
         ];
         $accumulatedThinkingTokens = null;
+        $accumulatedServerToolUse = null;
         $lastResponseData = null;
 
         /** @var list<array<string, mixed>> $messagesParam */
@@ -168,6 +170,17 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                     $accumulatedThinkingTokens = ($accumulatedThinkingTokens ?? 0)
                         + $outputTokenDetails['thinking_tokens'];
                 }
+
+                // Server tool request counts (such as `web_search_requests`) are billed per leg.
+                $serverToolUse = $usage['server_tool_use'] ?? null;
+                if (is_array($serverToolUse)) {
+                    $accumulatedServerToolUse = $accumulatedServerToolUse ?? [];
+                    foreach ($serverToolUse as $key => $count) {
+                        if (is_int($count)) {
+                            $accumulatedServerToolUse[$key] = ($accumulatedServerToolUse[$key] ?? 0) + $count;
+                        }
+                    }
+                }
             }
 
             $stopReason = $responseData['stop_reason'] ?? null;
@@ -208,6 +221,9 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             ];
         }
         $lastResponseData['usage'] = $accumulatedUsage;
+        if ($accumulatedServerToolUse !== null) {
+            $lastResponseData['usage']['server_tool_use'] = $accumulatedServerToolUse;
+        }
 
         return $this->parseResponseDataToGenerativeAiResult($lastResponseData);
     }
@@ -744,6 +760,10 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
          * `stop_reason` is kept: several Anthropic stop reasons map onto the same
          * FinishReasonEnum value, so dropping it would leave callers unable to distinguish, for
          * example, a turn that ended normally from one that is still paused.
+         *
+         * Server tool usage is not token data, so it is kept here rather than dropped with the
+         * rest of `usage`: Anthropic bills web search per request, and callers have no other
+         * way to know whether a search ran.
          */
         $additionalData = $responseData;
         unset(
@@ -752,6 +772,10 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             $additionalData['content'],
             $additionalData['usage']
         );
+        $serverToolUse = $responseData['usage']['server_tool_use'] ?? null;
+        if (is_array($serverToolUse)) {
+            $additionalData['server_tool_use'] = $serverToolUse;
+        }
 
         return new GenerativeAiResult(
             $id,
