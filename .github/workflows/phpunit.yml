@@ -1,0 +1,53 @@
+name: PHPUnit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phpunit.yml'
+      - '**.php'
+      - 'composer.json'
+      - 'composer.lock'
+      - 'phpunit.xml.dist'
+      - 'tests/**'
+
+# Disable permissions for all available scopes by default.
+# Any needed permissions should be configured at the job level.
+permissions: {}
+
+jobs:
+  phpunit:
+    name: PHPUnit (PHP ${{ matrix.php }}, ${{ matrix.dependencies }} dependencies)
+    runs-on: ubuntu-24.04
+    if: ${{ github.repository == 'WordPress/ai-provider-for-anthropic' || github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']
+        dependencies: [lowest, latest]
+        include:
+          - dependencies: lowest
+            composer_options: --prefer-lowest
+          - dependencies: latest
+            composer_options: ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Configure Composer platform
+        run: composer config platform.php ${{ matrix.php }}
+
+      - name: Install dependencies
+        run: composer update wordpress/php-ai-client --with-all-dependencies --no-interaction --no-progress --prefer-dist ${{ matrix.composer_options }}
+
+      - name: Run PHPUnit
+        run: composer test
