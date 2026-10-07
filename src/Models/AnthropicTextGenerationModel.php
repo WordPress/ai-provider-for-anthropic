@@ -587,6 +587,9 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                         'type' => 'object',
                         'properties' => new \stdClass(),
                     ];
+                } else {
+                    // The API refuses a combinator at the top level of input_schema.
+                    $inputSchema = $this->flattenTopLevelSchemaCombinators($inputSchema);
                 }
 
                 $tools[] = array_filter([
@@ -608,6 +611,224 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         }
 
         return $tools;
+    }
+
+    /**
+     * Flattens top-level JSON Schema combinators in a tool input schema.
+     *
+     * The API rejects any tool whose `input_schema` declares `oneOf`, `anyOf` or `allOf`
+     * at the top level ("input_schema does not support oneOf, allOf, or anyOf at the top
+     * level"). Since the tool list is sent with every request, a single such tool fails
+     * the whole request rather than just that tool.
+     *
+     * The branches are merged into one permissive object schema. This relaxes what the
+     * model is told, not what the caller accepts: the caller must still validate tool
+     * arguments against the original schema, so the merged schema must never exclude
+     * input the original allows. Only the top level is rewritten; nested combinators
+     * are valid and are left untouched.
+     *
+     * Each branch is flattened first, so a combinator nested inside a branch never
+     * resurfaces at the root and the result is stable when flattened again.
+     *
+     * Fragment `$ref`s resolve against the document root, so references to root
+     * definitions (`#/$defs/X`) keep working. References that point into a combinator
+     * branch (e.g. `#/oneOf/0/...`) do not resolve after flattening.
+     *
+     * @since n.e.x.t
+     *
+     * @param array<mixed> $schema The tool input schema.
+     * @return array<mixed> The schema without top-level combinators.
+     */
+    protected function flattenTopLevelSchemaCombinators(array $schema): array
+    {
+        $flattened = false;
+
+        foreach (['oneOf', 'anyOf', 'allOf'] as $combinator) {
+            if (!isset($schema[$combinator]) || !is_array($schema[$combinator])) {
+                continue;
+            }
+
+            $branches = array_map(
+                function ($branch) {
+                    return is_array($branch) ? $this->flattenTopLevelSchemaCombinators($branch) : $branch;
+                },
+                $schema[$combinator]
+            );
+            unset($schema[$combinator]);
+
+            // `allOf` is a conjunction, so every branch's required fields apply at once.
+            // `oneOf` / `anyOf` are disjunctions, where only the fields required by every
+            // branch are certainly required.
+            $schema = $this->mergeSchemaBranches($schema, $branches, $combinator === 'allOf');
+            $flattened = true;
+        }
+
+        if ($flattened) {
+            // The API also requires the top level to be an object schema.
+            $schema['type'] = 'object';
+        }
+
+        return $schema;
+    }
+
+    /**
+     * Merges JSON Schema combinator branches into their parent schema.
+     *
+     * - `properties`: a property the parent already declares is combined with the
+     *   branches' schemas via `allOf` (parent AND branches), so it is never wider than
+     *   the parent's own declaration. Properties only the branches declare are added.
+     * - `required`: the branches' fields are unioned (`allOf`) or intersected
+     *   (`oneOf` / `anyOf`), then added to the parent's own.
+     * - `title` and `description` are lifted from the branches, only if the parent
+     *   lacks them.
+     *
+     * No other branch keyword is lifted. `not`, `$ref`, `if` / `then` / `else`,
+     * `minProperties` and the like describe one branch, not the merged schema, so
+     * lifting them to the root would change its meaning.
+     *
+     * @since n.e.x.t
+     *
+     * @param array<mixed> $schema      The parent schema.
+     * @param array<mixed> $branches    The combinator branches.
+     * @param bool         $conjunction Whether required fields add up (`allOf`)
+     *                                  rather than being intersected
+     *                                  (`oneOf` / `anyOf`).
+     * @return array<mixed> The merged schema.
+     */
+    protected function mergeSchemaBranches(array $schema, array $branches, bool $conjunction): array
+    {
+        $requiredSets = [];
+        $alternatives = [];
+
+        foreach ($branches as $branch) {
+            // A `true` branch accepts anything, so it requires nothing.
+            if ($branch === true) {
+                $branch = [];
+            }
+            if (!is_array($branch)) {
+                continue;
+            }
+
+            $requiredSets[] = isset($branch['required']) && is_array($branch['required'])
+                ? array_values(array_filter($branch['required'], 'is_string'))
+                : [];
+
+            foreach (['title', 'description'] as $annotation) {
+                if (isset($branch[$annotation]) && !array_key_exists($annotation, $schema)) {
+                    $schema[$annotation] = $branch[$annotation];
+                }
+            }
+
+            if (isset($branch['properties']) && is_array($branch['properties'])) {
+                foreach ($branch['properties'] as $name => $propertySchema) {
+                    $alternatives[$name][] = $propertySchema;
+                }
+            }
+        }
+
+        if ($alternatives !== []) {
+            $properties = isset($schema['properties']) && is_array($schema['properties'])
+                ? $schema['properties']
+                : [];
+            $schema['properties'] = $this->mergeSchemaProperties($properties, $alternatives, $conjunction);
+        }
+
+        if ($requiredSets === []) {
+            return $schema;
+        }
+
+        $required = array_shift($requiredSets);
+        foreach ($requiredSets as $set) {
+            $required = $conjunction ? array_merge($required, $set) : array_intersect($required, $set);
+        }
+
+        /** @var array<int, string> $existing */
+        $existing = isset($schema['required']) && is_array($schema['required']) ? $schema['required'] : [];
+        $required = array_values(array_unique(array_merge($existing, $required)));
+
+        if ($required === []) {
+            unset($schema['required']);
+        } else {
+            $schema['required'] = $required;
+        }
+
+        return $schema;
+    }
+
+    /**
+     * Merges the branches' property schemas into the properties merged so far.
+     *
+     * A property declared by several branches keeps every branch's schema, using a
+     * property-level combinator (which the API accepts): `anyOf` for `oneOf` / `anyOf`
+     * branches, `allOf` for `allOf` branches. Identical schemas are deduplicated and a
+     * single remaining schema is used as is. For disjunctions, a branch that leaves the
+     * property unconstrained makes the merged property unconstrained; for conjunctions
+     * such a branch adds nothing. Keeping every alternative matters for discriminator
+     * properties (`const` or single-value `enum` per branch), which would otherwise
+     * collapse to the first branch's value.
+     *
+     * For disjunctions, only the branches that declare a property contribute to its
+     * merged schema. A branch that omits the property technically allows any value for
+     * it, but treating that as unconstrained would erase the schema of every property
+     * that only some branches declare. This is an intentional trade-off.
+     *
+     * When the parent already declares the property, its schema is combined with the
+     * branches' as `allOf`, so neither side silently wins.
+     *
+     * @since n.e.x.t
+     *
+     * @param array<mixed>         $properties   The properties merged so far.
+     * @param array<array<mixed>>  $alternatives The branches' schemas, per property name.
+     * @param bool                 $conjunction  Whether the branches are combined with
+     *                                           `allOf` rather than `anyOf`.
+     * @return array<mixed> The merged properties.
+     */
+    protected function mergeSchemaProperties(array $properties, array $alternatives, bool $conjunction): array
+    {
+        foreach ($alternatives as $name => $schemas) {
+            $merged = $this->combineSchemas($schemas, $conjunction);
+
+            if (array_key_exists($name, $properties)) {
+                $merged = $this->combineSchemas([$properties[$name], $merged], true);
+            }
+
+            $properties[$name] = $merged;
+        }
+
+        return $properties;
+    }
+
+    /**
+     * Combines schemas for a single property with `anyOf` or `allOf`.
+     *
+     * @since n.e.x.t
+     *
+     * @param array<mixed> $schemas     The schemas to combine.
+     * @param bool         $conjunction Whether to require all (`allOf`) or any (`anyOf`).
+     * @return mixed The combined schema; an empty object when it is unconstrained.
+     */
+    protected function combineSchemas(array $schemas, bool $conjunction)
+    {
+        $distinct = [];
+
+        foreach ($schemas as $schema) {
+            if ($schema === true || $schema === [] || ($schema instanceof \stdClass && (array) $schema === [])) {
+                if ($conjunction) {
+                    continue;
+                }
+                return new \stdClass();
+            }
+
+            if (!in_array($schema, $distinct, true)) {
+                $distinct[] = $schema;
+            }
+        }
+
+        if ($distinct === []) {
+            return new \stdClass();
+        }
+
+        return count($distinct) === 1 ? $distinct[0] : [($conjunction ? 'allOf' : 'anyOf') => $distinct];
     }
 
     /**
