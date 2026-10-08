@@ -76,6 +76,44 @@ class AnthropicTextGenerationModelTest extends TestCase
     }
 
     /**
+     * Tests that server tool usage from an earlier leg survives a final leg that reports none.
+     *
+     * @since n.e.x.t
+     */
+    public function testServerToolUseSurvivesFinalLegWithoutIt(): void
+    {
+        $result = $this->generateWithResponses([
+            $this->responseData('pause_turn', 1),
+            $this->responseData('end_turn', null),
+        ]);
+
+        $this->assertSame(
+            ['web_search_requests' => 1],
+            $result->getAdditionalData()['server_tool_use'] ?? null
+        );
+    }
+
+    /**
+     * Tests that each server tool counter is accumulated independently.
+     *
+     * @since n.e.x.t
+     */
+    public function testServerToolUseCountersAreAccumulatedIndependently(): void
+    {
+        $first = $this->responseData('pause_turn', null);
+        $first['usage']['server_tool_use'] = ['web_search_requests' => 2, 'web_fetch_requests' => 1];
+        $second = $this->responseData('end_turn', null);
+        $second['usage']['server_tool_use'] = ['web_search_requests' => 1, 'web_fetch_requests' => 3];
+
+        $result = $this->generateWithResponses([$first, $second]);
+
+        $this->assertSame(
+            ['web_search_requests' => 3, 'web_fetch_requests' => 4],
+            $result->getAdditionalData()['server_tool_use'] ?? null
+        );
+    }
+
+    /**
      * Runs a text generation against canned API responses.
      *
      * @param list<array<string, mixed>> $responses Response bodies, returned in order.
