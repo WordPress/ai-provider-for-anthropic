@@ -38,7 +38,7 @@
 			"step": "setSiteOptions",
 			"options": {
 				"wpai_features_enabled": true,
-				"wpai_feature_alt-text-generation_enabled": false,
+				"wpai_feature_alt-text-generation_enabled": true,
 				"wpai_feature_content-classification_enabled": true,
 				"wpai_feature_content-resizing_enabled": true,
 				"wpai_feature_content-translation_enabled": true,
