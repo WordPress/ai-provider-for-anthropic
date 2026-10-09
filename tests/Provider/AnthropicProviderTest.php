@@ -13,14 +13,14 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
 /**
  * Tests for the Anthropic provider.
  *
- * @since n.e.x.t
+ * @since 1.0.5
  */
 class AnthropicProviderTest extends TestCase
 {
     /**
      * Tests provider availability against the WordPress 7.0 PHP AI Client baseline.
      *
-     * @since n.e.x.t
+     * @since 1.0.5
      */
     public function testProviderAvailabilitySupportsPhpAiClient131(): void
     {

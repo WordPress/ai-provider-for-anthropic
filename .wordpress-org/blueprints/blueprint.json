@@ -35,8 +35,23 @@
 			}
 		},
 		{
-			"step": "runPHP",
-			"code": "<?php require '/wordpress/wp-load.php'; update_option( 'wpai_features_enabled', true ); update_option( 'wpai_feature_image-generation_enabled', true );"
+			"step": "setSiteOptions",
+			"options": {
+				"wpai_features_enabled": true,
+				"wpai_feature_alt-text-generation_enabled": true,
+				"wpai_feature_content-classification_enabled": true,
+				"wpai_feature_content-resizing_enabled": true,
+				"wpai_feature_content-translation_enabled": true,
+				"wpai_feature_editorial-notes_enabled": true,
+				"wpai_feature_editorial-updates_enabled": true,
+				"wpai_feature_excerpt-generation_enabled": true,
+				"wpai_feature_meta-description_enabled": true,
+				"wpai_feature_slug-generation_enabled": true,
+				"wpai_feature_summarization_enabled": true,
+				"wpai_feature_title-generation_enabled": true,
+				"wpai_feature_type-ahead_enabled": true,
+				"wpai_feature_image-generation_enabled": false
+			}
 		}
 	]
 }
