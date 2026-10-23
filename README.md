@@ -72,6 +72,10 @@ The provider uses the `ANTHROPIC_API_KEY` environment variable for authenticatio
 putenv('ANTHROPIC_API_KEY=your-api-key');
 ```
 
+### Maintainers
+
+Maintainers for this repo are [David Stone (@superdav42)](https://github.com/superdav42), [Felix Arntz (@felixarntz)](https://github.com/felixarntz), [Jason Adams (@JasonTheAdams)](https://github.com/JasonTheAdams), [Jeffrey Paul (@jeffpaul)](https://github.com/jeffpaul), and [Lauri Saarni (@saarnilauri)](https://github.com/saarnilauri); all can be reached using the [@WordPress/ai-provider-for-anthropic-maintainers](https://github.com/orgs/WordPress/teams/ai-provider-for-anthropic-maintainers) team.
+
 ## License
 
 GPL-2.0-or-later
