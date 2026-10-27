@@ -352,11 +352,12 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             $params['tools'] = $this->prepareToolsParam($functionDeclarations, $webSearch);
         }
 
+        $customOptions = $config->getCustomOptions();
+
         /*
          * Any custom options are added to the parameters as well.
          * This allows developers to pass other options that may be more niche or not yet supported by the SDK.
          */
-        $customOptions = $config->getCustomOptions();
         foreach ($customOptions as $key => $value) {
             /*
              * Extra tools (such as the code execution tool needed by Agent Skills) are added
@@ -381,6 +382,19 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 );
             }
             $params[$key] = $value;
+        }
+
+        /*
+         * Prompt caching is opt-in, through the API's own top-level `cache_control` parameter passed as a
+         * custom option. On its own, that parameter only places a breakpoint on the last block of the
+         * request, which includes the per-request user input, so the tools and system instruction shared
+         * across requests would never be read back. Explicit breakpoints are therefore added at the end
+         * of those, with the same cache control so that their TTLs stay consistent. This runs after the
+         * custom options so that extra tools merged from them are covered too.
+         */
+        $cacheControl = $customOptions['cache_control'] ?? null;
+        if (is_array($cacheControl) && $cacheControl !== []) {
+            $params = $this->addPromptCacheBreakpoints($params, $cacheControl);
         }
 
         return $params;
@@ -430,6 +444,45 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         }
 
         return self::DEFAULT_MAX_TOKENS;
+    }
+
+    /**
+     * Adds prompt cache breakpoints at the end of the tools and of the system instruction.
+     *
+     * The API renders a request as `tools`, then `system`, then `messages`, and a cache entry covers
+     * everything up to its breakpoint. A breakpoint on the last tool keeps the tool definitions cached
+     * even when the system instruction varies, and one on the system instruction covers both. Together
+     * with the top-level breakpoint for the conversation, this uses three of the four allowed slots.
+     *
+     * The system instruction is only turned into a content block array here, so that requests without
+     * prompt caching keep sending it as a plain string.
+     *
+     * @since n.e.x.t
+     *
+     * @param array<string, mixed> $params       The parameters for the API request.
+     * @param array<mixed>         $cacheControl The cache control, e.g. `['type' => 'ephemeral']`.
+     * @return array<string, mixed> The parameters with the cache breakpoints added.
+     */
+    protected function addPromptCacheBreakpoints(array $params, array $cacheControl): array
+    {
+        if (isset($params['tools']) && is_array($params['tools']) && $params['tools'] !== []) {
+            $lastToolIndex = array_key_last($params['tools']);
+            if (is_array($params['tools'][$lastToolIndex])) {
+                $params['tools'][$lastToolIndex]['cache_control'] = $cacheControl;
+            }
+        }
+
+        if (isset($params['system']) && is_string($params['system'])) {
+            $params['system'] = [
+                [
+                    'type' => 'text',
+                    'text' => $params['system'],
+                    'cache_control' => $cacheControl,
+                ],
+            ];
+        }
+
+        return $params;
     }
 
     /**
@@ -1061,13 +1114,16 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
          * Server tool usage is not token data, so it is kept here rather than dropped with the
          * rest of `usage`: Anthropic bills web search per request, and callers have no other
          * way to know whether a search ran.
+         *
+         * The raw `usage` is kept as well: TokenUsage folds cache writes and reads into the prompt
+         * tokens, while they are billed at different rates, so callers need the breakdown
+         * (`cache_creation_input_tokens`, `cache_read_input_tokens`) to account for prompt caching.
          */
         $additionalData = $responseData;
         unset(
             $additionalData['id'],
             $additionalData['role'],
-            $additionalData['content'],
-            $additionalData['usage']
+            $additionalData['content']
         );
         $serverToolUse = $responseData['usage']['server_tool_use'] ?? null;
         if (is_array($serverToolUse)) {
