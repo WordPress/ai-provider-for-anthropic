@@ -28,6 +28,7 @@ use WordPress\AiClient\Tools\DTO\FunctionCall;
 use WordPress\AiClient\Tools\DTO\FunctionDeclaration;
 use WordPress\AiClient\Tools\DTO\WebSearch;
 use WordPress\AnthropicAiProvider\Authentication\AnthropicApiKeyRequestAuthentication;
+use WordPress\AnthropicAiProvider\Metadata\AnthropicModelMetadata;
 use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
 
 /**
@@ -57,16 +58,31 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
     public const MAX_TOOL_CONTINUATIONS = 5;
 
     /**
-     * Default maximum number of tokens for text generation.
+     * Fallback maximum number of tokens for text generation.
      *
-     * The Anthropic API requires `max_tokens` to always be present in the request,
-     * so this value is used as a fallback when no limit is configured.
+     * The Anthropic API requires `max_tokens` to always be present in the request. When no limit
+     * is configured and the model's own output limit is unknown, this value is used, since it is
+     * accepted by every Claude model, including Claude 3 models that cap output at 4096 tokens.
      *
      * @since 1.0.0
      *
      * @var int
      */
     public const DEFAULT_MAX_TOKENS = 4096;
+
+    /**
+     * Recommended maximum number of tokens for text generation.
+     *
+     * When no limit is configured, models that support more output tokens than this get this
+     * value as their default. It is Anthropic's recommended default for non-streaming requests;
+     * larger values make long generations more likely to run into HTTP timeouts.
+     *
+     * @since n.e.x.t
+     *
+     * @var int
+     */
+    public const RECOMMENDED_MAX_TOKENS = 16000;
+
     /**
      * {@inheritDoc}
      *
@@ -277,13 +293,8 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             $params['system'] = $systemInstruction;
         }
 
-        $maxTokens = $config->getMaxTokens();
-        if ($maxTokens !== null) {
-            $params['max_tokens'] = $maxTokens;
-        } else {
-            // The 'max_tokens' parameter is required in the Anthropic API, so we need a default.
-            $params['max_tokens'] = self::DEFAULT_MAX_TOKENS;
-        }
+        // The 'max_tokens' parameter is required in the Anthropic API, so it is always set.
+        $params['max_tokens'] = $this->getMaxTokensParam();
 
         $temperature = $config->getTemperature();
         if ($temperature !== null) {
@@ -338,6 +349,52 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
         }
 
         return $params;
+    }
+
+    /**
+     * Returns the value for the `max_tokens` parameter of the API request.
+     *
+     * An explicitly configured limit is always used as is. Otherwise, a default that fits the
+     * model is used.
+     *
+     * @since n.e.x.t
+     *
+     * @return int The value for the `max_tokens` parameter.
+     */
+    protected function getMaxTokensParam(): int
+    {
+        return $this->getConfig()->getMaxTokens() ?? $this->getDefaultMaxTokens();
+    }
+
+    /**
+     * Returns the default value for the `max_tokens` parameter when no limit is configured.
+     *
+     * If the Anthropic Models API reported the model's output limit, that limit is used, capped
+     * at RECOMMENDED_MAX_TOKENS since requests are not streamed. If the limit is unknown, Claude 4
+     * and later models (which all support at least 32K output tokens) get RECOMMENDED_MAX_TOKENS,
+     * and any other model, such as a Claude 3 model, gets the safe DEFAULT_MAX_TOKENS.
+     *
+     * @since n.e.x.t
+     *
+     * @return int The default value for the `max_tokens` parameter.
+     */
+    protected function getDefaultMaxTokens(): int
+    {
+        $metadata = $this->metadata();
+
+        if ($metadata instanceof AnthropicModelMetadata) {
+            $maxOutputTokens = $metadata->getMaxOutputTokens();
+            if ($maxOutputTokens !== null) {
+                return min($maxOutputTokens, self::RECOMMENDED_MAX_TOKENS);
+            }
+        }
+
+        // Model IDs in the 'claude-{family}-{major}' format were introduced with Claude 4.
+        if (preg_match('/^claude-[a-z]+-(\d+)/', $metadata->getId(), $matches) && (int) $matches[1] >= 4) {
+            return self::RECOMMENDED_MAX_TOKENS;
+        }
+
+        return self::DEFAULT_MAX_TOKENS;
     }
 
     /**
@@ -908,7 +965,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 break;
             case 'max_tokens':
             case 'model_context_window_exceeded':
-                $maxTokens = $this->getConfig()->getMaxTokens() ?? self::DEFAULT_MAX_TOKENS;
+                $maxTokens = $this->getMaxTokensParam();
                 throw new TokenLimitReachedException(
                     sprintf(
                         'Generation stopped due to token limit (%d) with stop reason "%s".',
