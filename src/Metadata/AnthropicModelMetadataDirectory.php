@@ -25,7 +25,7 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  * @since 1.0.0
  *
  * @phpstan-type ModelsResponseData array{
- *     data: list<array{id: string, display_name?: string}>
+ *     data: list<array{id: string, display_name?: string, max_tokens?: int|null}>
  * }
  */
 class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetadataDirectory
@@ -130,11 +130,17 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
 
                     $modelName = $modelData['display_name'] ?? $modelId;
 
-                    return new ModelMetadata(
+                    // The output token limit, used as the basis for the default 'max_tokens' value.
+                    $maxOutputTokens = isset($modelData['max_tokens']) && is_int($modelData['max_tokens'])
+                        ? $modelData['max_tokens']
+                        : null;
+
+                    return new AnthropicModelMetadata(
                         $modelId,
                         $modelName,
                         $modelCaps,
-                        $modelOptions
+                        $modelOptions,
+                        $maxOutputTokens
                     );
                 },
                 $modelsData
