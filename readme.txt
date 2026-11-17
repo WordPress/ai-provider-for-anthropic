@@ -34,7 +34,7 @@ Available models are dynamically discovered from the Anthropic API, including Cl
 
 1. Upload the plugin files to `/wp-content/plugins/ai-provider-for-anthropic/`
 2. Activate the plugin through the 'Plugins' menu in WordPress
-3. Configure your Anthropic API key via the `ANTHROPIC_API_KEY` environment variable or constant
+3. On WordPress 7.0 and above, add your Anthropic API key under Settings > Connectors. Alternatively, on any supported WordPress version, provide the key via the `ANTHROPIC_API_KEY` environment variable or PHP constant
 
 == Frequently Asked Questions ==
 
@@ -44,7 +44,22 @@ Visit the [Anthropic Console](https://console.anthropic.com/) to create an accou
 
 = Does this plugin work without the PHP AI Client? =
 
-No, this plugin requires the PHP AI Client plugin to be installed and activated. It provides the Anthropic-specific implementation that the PHP AI Client uses.
+No. This plugin provides the Anthropic-specific implementation that the PHP AI Client uses. WordPress 7.0 and above include the PHP AI Client, so nothing else needs to be installed. On WordPress 6.9, the [wordpress/php-ai-client](https://github.com/WordPress/php-ai-client) package must be installed separately.
+
+= Why do I see "It was not possible to connect to the provider using this key"? =
+
+When you save a key under Settings > Connectors, WordPress checks it by requesting the list of available models from the Anthropic API. This message is shown whenever that request fails, whatever the reason. Common causes are:
+
+* The key was mistyped, copied with extra characters, or has been revoked in the Anthropic Console.
+* The server cannot reach `api.anthropic.com`, for example because of a firewall, a proxy, or the network setup of a local development environment.
+* The request took longer than the default WordPress HTTP timeout of 5 seconds.
+* The Anthropic API was temporarily unavailable.
+
+To find out which one applies, run the same request from the server or container that runs WordPress, replacing `YOUR_API_KEY` with your key:
+
+`curl -sS -m 5 https://api.anthropic.com/v1/models -H "x-api-key: YOUR_API_KEY" -H "anthropic-version: 2023-06-01"`
+
+If this returns a list of models, the key and the connection both work. Otherwise the output shows whether the key was rejected or the API could not be reached.
 
 == Changelog ==
 
