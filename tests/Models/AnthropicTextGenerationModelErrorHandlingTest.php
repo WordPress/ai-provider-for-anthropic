@@ -124,16 +124,11 @@ class AnthropicTextGenerationModelErrorHandlingTest extends TestCase
                 )
             )
         );
+
         $this->expectException(ServerException::class);
         $this->expectExceptionMessage('Overloaded (529)');
 
         $model->generateTextResult($this->minimalPrompt());
-        try {
-            $model->generateTextResult($this->minimalPrompt());
-            $this->fail('Expected ServerException was not thrown.');
-        } catch (ServerException $e) {
-            $this->assertStringContainsStringIgnoringCase('overloaded', $e->getMessage());
-        }
     }
 
     /**
