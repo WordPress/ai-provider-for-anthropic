@@ -20,14 +20,14 @@ composer require wordpress/ai-provider-for-anthropic
 
 1. Download the plugin files
 2. Upload to `/wp-content/plugins/ai-provider-for-anthropic/`
-3. Ensure the PHP AI Client plugin is installed and activated
-4. Activate the plugin through the WordPress admin
+3. Activate the plugin through the WordPress admin
+4. Add your Anthropic API key under **Settings > Connectors**
 
 ## Usage
 
 ### With WordPress
 
-The provider automatically registers itself with the PHP AI Client on the `init` hook. Simply ensure both plugins are active and configure your API key:
+The provider automatically registers itself with the PHP AI Client on the `init` hook. Add your API key under **Settings > Connectors**, or configure it in code:
 
 ```php
 // Set your Anthropic API key (or use the ANTHROPIC_API_KEY environment variable)
@@ -71,6 +71,8 @@ The provider uses the `ANTHROPIC_API_KEY` environment variable for authenticatio
 ```php
 putenv('ANTHROPIC_API_KEY=your-api-key');
 ```
+
+In WordPress 7.0 and above, you can instead save the key under **Settings > Connectors**, or define an `ANTHROPIC_API_KEY` constant in `wp-config.php`. A key provided via the environment variable or constant takes precedence over one saved in the Connectors screen.
 
 ### Maintainers
 
