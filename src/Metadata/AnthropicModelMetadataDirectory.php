@@ -51,6 +51,20 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
     /**
      * {@inheritDoc}
      *
+     * The cached models list holds AnthropicModelMetadata objects, which earlier versions of this
+     * plugin can't unserialize from a persistent object cache. A separate key keeps a downgrade
+     * from reading them.
+     *
+     * @since n.e.x.t
+     */
+    protected function getBaseCacheKey(): string
+    {
+        return parent::getBaseCacheKey() . '_v2';
+    }
+
+    /**
+     * {@inheritDoc}
+     *
      * @since 1.0.0
      */
     protected function createRequest(HttpMethodEnum $method, string $path, array $headers = [], $data = null): Request

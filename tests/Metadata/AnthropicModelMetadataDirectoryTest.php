@@ -105,4 +105,21 @@ class AnthropicModelMetadataDirectoryTest extends TestCase
     {
         $this->assertNull((new AnthropicModelMetadata('claude-test', 'Claude Test', [], [], 0))->getMaxOutputTokens());
     }
+
+    /**
+     * The cached models list holds AnthropicModelMetadata objects, so it must not share a cache key with earlier
+     * plugin versions that cache plain ModelMetadata objects.
+     *
+     * @since n.e.x.t
+     */
+    public function testUsesVersionedCacheKey(): void
+    {
+        $method = new ReflectionMethod(AnthropicModelMetadataDirectory::class, 'getBaseCacheKey');
+        $method->setAccessible(true);
+
+        $cacheKey = $method->invoke(new AnthropicModelMetadataDirectory());
+
+        $this->assertIsString($cacheKey);
+        $this->assertStringEndsWith('_v2', $cacheKey);
+    }
 }
