@@ -42,7 +42,8 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  *     output_tokens?: int,
  *     cache_creation_input_tokens?: int,
  *     cache_read_input_tokens?: int,
- *     output_tokens_details?: OutputTokenDetailsData
+ *     output_tokens_details?: OutputTokenDetailsData,
+ *     server_tool_use?: array<string, int>
  * }
  * @phpstan-type ResponseData array{
  *     id?: string,
@@ -138,6 +139,7 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             'cache_read_input_tokens' => 0,
         ];
         $accumulatedThinkingTokens = null;
+        $accumulatedServerToolUse = null;
         $lastResponseData = null;
 
         /** @var list<array<string, mixed>> $messagesParam */
@@ -184,6 +186,17 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                     $accumulatedThinkingTokens = ($accumulatedThinkingTokens ?? 0)
                         + $outputTokenDetails['thinking_tokens'];
                 }
+
+                // Server tool request counts (such as `web_search_requests`) are billed per leg.
+                $serverToolUse = $usage['server_tool_use'] ?? null;
+                if (is_array($serverToolUse)) {
+                    $accumulatedServerToolUse = $accumulatedServerToolUse ?? [];
+                    foreach ($serverToolUse as $key => $count) {
+                        if (is_int($count)) {
+                            $accumulatedServerToolUse[$key] = ($accumulatedServerToolUse[$key] ?? 0) + $count;
+                        }
+                    }
+                }
             }
 
             $stopReason = $responseData['stop_reason'] ?? null;
@@ -198,7 +211,12 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 isset($container['id']) &&
                 is_string($container['id'])
             ) {
-                $params['container'] = $container['id'];
+                // Keep any other container settings, such as the Agent Skills to load.
+                if (isset($params['container']) && is_array($params['container'])) {
+                    $params['container']['id'] = $container['id'];
+                } else {
+                    $params['container'] = $container['id'];
+                }
             }
             // Append assistant response to messages parameter for continuation.
             $role = isset($responseData['role']) && is_string($responseData['role'])
@@ -224,6 +242,9 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             ];
         }
         $lastResponseData['usage'] = $accumulatedUsage;
+        if ($accumulatedServerToolUse !== null) {
+            $lastResponseData['usage']['server_tool_use'] = $accumulatedServerToolUse;
+        }
 
         return $this->parseResponseDataToGenerativeAiResult($lastResponseData);
     }
@@ -337,6 +358,20 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
          */
         $customOptions = $config->getCustomOptions();
         foreach ($customOptions as $key => $value) {
+            /*
+             * Extra tools (such as the code execution tool needed by Agent Skills) are added
+             * alongside the function declarations and web search tool rather than replacing them.
+             */
+            if (
+                'tools' === $key &&
+                is_array($value) &&
+                array_values($value) === $value &&
+                isset($params['tools']) &&
+                is_array($params['tools'])
+            ) {
+                $params['tools'] = array_merge($params['tools'], $value);
+                continue;
+            }
             if (isset($params[$key])) {
                 throw new InvalidArgumentException(
                     sprintf(
@@ -1022,6 +1057,10 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
          * `stop_reason` is kept: several Anthropic stop reasons map onto the same
          * FinishReasonEnum value, so dropping it would leave callers unable to distinguish, for
          * example, a turn that ended normally from one that is still paused.
+         *
+         * Server tool usage is not token data, so it is kept here rather than dropped with the
+         * rest of `usage`: Anthropic bills web search per request, and callers have no other
+         * way to know whether a search ran.
          */
         $additionalData = $responseData;
         unset(
@@ -1030,6 +1069,10 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             $additionalData['content'],
             $additionalData['usage']
         );
+        $serverToolUse = $responseData['usage']['server_tool_use'] ?? null;
+        if (is_array($serverToolUse)) {
+            $additionalData['server_tool_use'] = $serverToolUse;
+        }
 
         return new GenerativeAiResult(
             $id,
@@ -1112,6 +1155,9 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             case 'redacted_thinking':
             case 'server_tool_use':
             case 'web_search_tool_result':
+            case 'code_execution_tool_result':
+            case 'bash_code_execution_tool_result':
+            case 'text_editor_code_execution_tool_result':
                 // No special handling for now. These can be ignored for now.
                 return null;
         }
