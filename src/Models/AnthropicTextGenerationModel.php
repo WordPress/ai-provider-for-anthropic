@@ -195,7 +195,12 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
                 isset($container['id']) &&
                 is_string($container['id'])
             ) {
-                $params['container'] = $container['id'];
+                // Keep any other container settings, such as the Agent Skills to load.
+                if (isset($params['container']) && is_array($params['container'])) {
+                    $params['container']['id'] = $container['id'];
+                } else {
+                    $params['container'] = $container['id'];
+                }
             }
             // Append assistant response to messages parameter for continuation.
             $role = isset($responseData['role']) && is_string($responseData['role'])
@@ -342,6 +347,20 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
          */
         $customOptions = $config->getCustomOptions();
         foreach ($customOptions as $key => $value) {
+            /*
+             * Extra tools (such as the code execution tool needed by Agent Skills) are added
+             * alongside the function declarations and web search tool rather than replacing them.
+             */
+            if (
+                'tools' === $key &&
+                is_array($value) &&
+                array_values($value) === $value &&
+                isset($params['tools']) &&
+                is_array($params['tools'])
+            ) {
+                $params['tools'] = array_merge($params['tools'], $value);
+                continue;
+            }
             if (isset($params[$key])) {
                 throw new InvalidArgumentException(
                     sprintf(
@@ -1079,6 +1098,9 @@ class AnthropicTextGenerationModel extends AbstractApiBasedModel implements Text
             case 'redacted_thinking':
             case 'server_tool_use':
             case 'web_search_tool_result':
+            case 'code_execution_tool_result':
+            case 'bash_code_execution_tool_result':
+            case 'text_editor_code_execution_tool_result':
                 // No special handling for now. These can be ignored for now.
                 return null;
         }
