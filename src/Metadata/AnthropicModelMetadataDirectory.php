@@ -25,7 +25,7 @@ use WordPress\AnthropicAiProvider\Provider\AnthropicProvider;
  * @since 1.0.0
  *
  * @phpstan-type ModelsResponseData array{
- *     data: list<array{id: string, display_name?: string}>
+ *     data: list<array{id: string, display_name?: string, max_tokens?: int|null}>
  * }
  */
 class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetadataDirectory
@@ -46,6 +46,20 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
             return $requestAuthentication;
         }
         return new AnthropicApiKeyRequestAuthentication($requestAuthentication->getApiKey());
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * The cached models list holds AnthropicModelMetadata objects, which earlier versions of this
+     * plugin can't unserialize from a persistent object cache. A separate key keeps a downgrade
+     * from reading them.
+     *
+     * @since n.e.x.t
+     */
+    protected function getBaseCacheKey(): string
+    {
+        return parent::getBaseCacheKey() . '_v2';
     }
 
     /**
@@ -130,11 +144,17 @@ class AnthropicModelMetadataDirectory extends AbstractOpenAiCompatibleModelMetad
 
                     $modelName = $modelData['display_name'] ?? $modelId;
 
-                    return new ModelMetadata(
+                    // The output token limit, used as the basis for the default 'max_tokens' value.
+                    $maxOutputTokens = isset($modelData['max_tokens']) && is_int($modelData['max_tokens'])
+                        ? $modelData['max_tokens']
+                        : null;
+
+                    return new AnthropicModelMetadata(
                         $modelId,
                         $modelName,
                         $modelCaps,
-                        $modelOptions
+                        $modelOptions,
+                        $maxOutputTokens
                     );
                 },
                 $modelsData
