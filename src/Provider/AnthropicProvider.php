@@ -51,8 +51,15 @@ class AnthropicProvider extends AbstractApiProvider
             }
         }
 
+        $capabilitiesList = implode(', ', $capabilities);
+        if (function_exists('esc_html')) {
+            $escaped = esc_html($capabilitiesList);
+            if (is_string($escaped)) {
+                $capabilitiesList = $escaped;
+            }
+        }
         throw new RuntimeException(
-            'Unsupported model capabilities: ' . implode(', ', $capabilities)
+            'Unsupported model capabilities: ' . $capabilitiesList
         );
     }
 
